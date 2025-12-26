@@ -1,0 +1,96 @@
+\section{Related Work}\label{sec:related}
+%Out-of-thin-air~\cite{Boehm:2014:OGA:2618128.2618134}.
+
+\newcommand{\etal}{et al.}
+\newcommand{\etc}{etc.}
+
+Lamport's paper on SC \cite{lamport1979make} is probably the first formal definition, both axiomatic and operational, of a memory model. In the nineties, three different weak memory models were defined axiomatically for SUN's Sparc processors: TSO, PSO and RMO~\cite{sparc1992sparcv8,weaver1994sparc}. A weak memory model for DEC Alpha was also specified axiomatically in the same time frame~\cite{alpha1998}.
+Until a decade ago, however, there was no effort to specify weak memory models operationally or match axiomatic specifications to operational models. In this context, papers by Sarkar \etal \cite{Sarkar:2009:SXM:1594834.1480929}, Sewell \etal
+\cite{sewell2010x86} and Owens \etal{} \cite{owens2009better} are very important because they showed that the axiomatic specification of TSO is exactly equivalent to an operational model using store buffers connected to I2E processors and atomic memory.
+
+Until recently, weak memory models have not been defined prior to ISA
+implementation and have been documented by manufacturers only in an ad
+hoc manner using a combination of natural language and litmus tests.
+Not surprisingly, such ``definitions'' have had to be revised as
+implementations have changed, revealing new corner cases of behaviors.
+Over the last decade, several studies have been performed, mostly by
+academic researchers, to determine the allowed and disallowed behavior
+of several commercial microprocessors, with the goal of creating
+formal models to explain the observed behaviors.  These studies have
+been done on real machines by running billions of instructions and
+recording the observations (just like studying any natural
+phenomenon).  Then, with extra inputs from hardware designers, a model
+is constructed that tries to satisfy all these observations.  
+For example, 
+Sarkar \etal{} specified an operational model for POWER
+\cite{sarkar2011understanding, sarkar2012synchronising}, using a
+non-atomic memory.
+Later, Mador-Haim \etal{} \cite{mador2012axiomatic}
+developed an axiomatic model for POWER and proved that it matches the
+earlier operational model. 
+Alglave \etal{} \cite{alglave2009semantics, Alglave2011,
+  alglave2012formal, alglave2014herding, alglave2013software} give
+axiomatic specifications for ARMv7 and POWER using the Herd framework;
+Flur \etal{} \cite{flur2016modelling} give operational specification
+for ARMv8.
+
+However, there has been some dispute if the
+operational model of POWER models actual POWER processors accurately
+\cite{alglave2014herding}. We attribute the reason for the potential
+errors to be the inherent complexity of the operational model because of the use of non-atomic memory.
+Alglave models are not sufficiently grounded in operational models and face the problem of being too liberal. The model may admit behaviors which cannot be observed in any implementation. Such models can also lead to insertion of unnecessary fences in a program. 
+We think it is important to have matching operational and axiomatic models.
+
+Researchers have also proposed several other consistency models:
+Processor Consistency~\cite{goodman1991cache}, Weak
+Consistency~\cite{dubois1986memory}, RC~\cite{gharachorloo1990memory},
+CRF~\cite{shen1999commit}, Instruction Reordering + Store
+Atomicity~\cite{arvind2006memory}.  
+The tutorials by Adve \etal{} \cite{adve1996shared} and by Maranget
+\etal{} \cite{maranget2012tutorial} provide relationships among some
+of these models.
+
+Researchers have also proposed architectural mechanisms for implementing SC \cite{lamport1979make} efficiently
+\cite{gharachorloo1991two,ranganathan1997using,guiady1999sc+,gniady2002speculative,ceze2007bulksc,wenisch2007mechanisms,blundell2009invisifence,singh2012end,lin2012efficient,gope2014atomic}. 
+Several of these architectural mechanisms are interesting in their own right and applicable to reducing power consumption, however,
+so far commercial processor vendors have shown little interest in adopting stricter memory models.
+
+
+Recently, there is a splurge of activity in trying to specify
+semantics of concurrent languages: C/C++
+\cite{c++n4527,boehm2008foundations,batty2011mathematizing,Batty:2016:OSA:2914770.2837637,Kang:2015:FCM:2737924.2738005},
+Java \cite{manson2005java,cenciarelli2007java, maessen2000improving}.
+These models are specified axiomatically, and allow load-store reordering.
+For C++, there has been work to specify an equivalent operational model
+\cite{operationalC++}.
+
+
+%% The check series of work presents a methodology to test if a specific
+%% microarchitectural specification (which is conceptually similar to an
+%% operational model) adheres to an axiomatic memory model specification,
+%% for a set of litmus tests \cite{}. They have recently extended their
+%% methodology to include RTL verification \cite{RTLCheck} (maybe a CoRR
+%% version is more appropriate since ISCA is too far off?).
+
+%% Recently, Lustig \etal{} have used Memory Ordering Specification
+%% Tables (MOSTs) to describe memory models, and proposed a hardware
+%% scheme to dynamically convert programs across memory models described
+%% in MOSTs \cite{lustig2015armor}.  MOST specifies the ordering strength
+%% (e.g., locally ordered, multicopy atomic) of two instructions from
+%% the same processor under different conditions (e.g., data dependency,
+%% control dependency).  Our work is orthogonal in that we propose new
+%% memory models with equivalent operational and axiomatic definitions,
+%% that are proved manually.
+
+%% Adve and Hill defined Data-Race-Free-0 (DRF0), a class of programs where shared variables are protected by locks, and proposed that DRF0 programs should behave as SC \cite{adve1990weak}.
+%% However, architectural memory models must also define the behaviors of non-DRF0 programs.
+
+%% Arvind and Maessen have specified the conditions for preserving store
+%% atomicity in program execution when instructions can be reordered
+%% \cite{arvind2006memory}.  In contrast, GAM do not insist on store
+%% atomicity at the program level.
+
+
+
+
+

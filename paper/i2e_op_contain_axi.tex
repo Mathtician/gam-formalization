@@ -1,0 +1,105 @@
+\section{Completeness: GAM-I2E Axiomatic Model $\subseteq$ GAM-I2E Operational Model}\label{sec:i2_op_contain_axi}
+\begin{theorem}
+    GAM-I2E axiomatic model $\subseteq$ GAM-I2E operational model.
+\end{theorem}
+\begin{proof}
+The goal is that for any legal axiomatic relations $\langle \ProgOrd, \MemOrd, \ReadFrom\rangle$ (which satisfy the GAM-I2E axioms), we can run the GAM-I2E operational model to simulate the same program behavior.
+In each step of the simulation, we first decide which rule to fire in the operational model based on the current state of the operational model and $\MemOrd$, and then we fire that rule.
+Here is the algorithm to determine which rule to fire in each simulation step:
+\begin{enumerate}
+    \item If in the operational model there is a processor whose next instruction is not a load, we fire an Execute-Reg-Branch or Execute-Store-Fence rule to execute that instruction in the operational model.
+    \item If the above case does not apply, and in the operational model there is a fence that can be dequeued from the local buffer, then we fire the Dequeue-Fence rule to dequeue that fence in the operational model.
+    \item \label{sim:i2e:st} If neither of the above cases applies, and in the operational model there is a store $S$ in the local buffer of a processor, and $S$ can be dequeued from the local buffer (i.e., the guard for the Dequeue-Store rule is true), and all stores before $S$ in $\MemOrd$ are already in $\IIEMemOrd$, then we fire a Dequeue-Store rule to dequeue $S$ in the operational model.
+    \item \label{sim:i2e:ld} If none of the above cases applies, then in the operational model there must be a processor such that the next instruction of the processor is a load $L$, and $L$ can be executed (i.e., the guard for the Execute-Load rule is true), and all stores before $L$ in $\MemOrd$ are already in $\IIEMemOrd$.
+    We fire an Execute-Load rule to execute $L$ in the operational model.
+    In the Execute-Load rule of $L$, we insert $L$ into $\IIEMemOrd$ such that for any instruction $I$ already in $\IIEMemOrd$, if $I \MemOrd L$ then $I \IIEMemOrd L$, otherwise $L \IIEMemOrd I$.
+\end{enumerate}
+After each step of the simulation, we keep the following invariants:
+\begin{enumerate}
+    \item \label{inv:i2e:po} The execution order on each processor is a prefix of the $\ProgOrd$ of that processor.
+    \item The result of each executed instruction is the same as that in $\ProgOrd$.
+    \item \label{inv:i2e:rf} The store read by each executed load is the same as that indicated by the $\ReadFrom$ edges.
+    \item \label{inv:i2e:stuck} The simulation cannot get stuck.
+    \item \label{inv:i2e:mo-match} For two memory instruction $I_1$ and $I_2$, if $I_1 \IIEMemOrd I_2$ in the operational model, then $I_1 \MemOrd I_2$ in the axiomatic relations.
+    \item \label{inv:i2e:mo-prefix} The order of all stores in $\IIEMemOrd$ is a prefix of the order of all stores in $\MemOrd$.
+\end{enumerate}
+The first two induction invariants imply that \emph{before} each simulation step, the following properties hold for each processor $i$ (assuming the next instruction of the processor is $I$):
+\begin{enumerate}
+    \item $\IIEProgOrd$ is a prefix of $\ProgOrd$ (of processor $i$) up to $I$ (including $I$).
+    \item For any instructions $I_1 \PreservePO I_2$ from processor $i$, if $I_1$ and $I_2$ are not ordered after $I$ in $\ProgOrd$ (i.e., $I_2$ may be equal to $I$), then $I_1 \IIEPreservePO I_2$.
+    \item \label{prop:i2e:ppo} For any instructions $I_1$ and $I_2$, if $I_1 \IIEPreservePO I_2$, then $I_1 \PreservePO I_2$.
+\end{enumerate}
+
+Now we examine each case in the simulation algorithm and prove that all invariants hold:
+\begin{enumerate}
+    \item We execute a non-load instruction: trivial.
+    \item We dequeue a fence from the local buffer: trivial.
+    \item We dequeue a store $S$ from the local buffer: In this case, we need to verify invariants \ref{inv:i2e:mo-match} and \ref{inv:i2e:mo-prefix}.
+    Invariant~\ref{inv:i2e:mo-prefix} is trivial, because all stores older than $S$ in $\MemOrd$ are already in $\IIEMemOrd$ (as required by case~\ref{sim:i2e:st} in the algorithm).
+    We now consider invariant~\ref{inv:i2e:mo-match}.
+    For each instruction $I$ already in $\IIEMemOrd$ at the dequeue time, $I$ must be added to $\IIEMemOrd$ by case~\ref{sim:i2e:st} or \ref{sim:i2e:ld} in the simulation algorithm.
+    Since these two cases require that every store older than $I$ in $\MemOrd$ to be present in $\IIEMemOrd$, $S$ cannot be older than $I$ in $\MemOrd$, i.e., $I \MemOrd S$.
+    \item We execute a load $L$:
+    We first need to verify invariant~\ref{inv:i2e:stuck}, i.e., we are able to find such an $L$ that satisfies the requirements in case~\ref{sim:i2e:ld} of the simulation algorithm.
+    We prove this by contradiction, i.e., such $L$ cannot be found.
+    In this case, the next instruction of every processor is a load.
+    We examine why the next instruction $L_1$ (which is a load) of processor 1 does not satisfy the requirements of case~\ref{sim:i2e:ld} of the simulation algorithm.
+    There are two possibilities:
+    \begin{enumerate}
+        \item There is a store $S_2 \MemOrd L_1$ but $S_2$ is not yet in $\IIEMemOrd$.
+        \item The guard of the Execute-Load rule for $L_1$ is false.
+        We backtrack which instruction is stalling $L_1$.
+        There must exist an instruction $I_1$ in the local buffer of processor 1 which is ordered before $L_1$ in $\IIEPreservePO$.
+        If $I_1$ is a fence, then $I_1$ cannot be dequeued because there is another instruction $I_2 \IIEMemOrd I_1$ in the local buffer.
+        We keep doing this until we find a store, i.e., $I_k \IIEPreservePO I_{k-1} \IIEPreservePO \cdots \IIEPreservePO I_1 \IIEPreservePO L_1$, where $I_1\cdot I_k$ are all in the local buffer of processor 1, $I_1\cdots I_{k-1}$ are fences, and $I_k$ is a store.
+        According to property~\ref{prop:i2e:ppo}, $I_k\IIEPreservePO L_1\Rightarrow I_k \PreservePO L_1 \Rightarrow I_k \MemOrd L_1$.
+    \end{enumerate}
+    In either case, we find a store $S_2 \MemOrd L_1$, and $S_2$ is not in $\IIEMemOrd$.
+    Now we consider why $S_2$ is not in $\IIEMemOrd$, and there are two possibilities:
+    \begin{enumerate}
+        \item $S_2$ is not executed yet:
+        Assume $S_2$ is in processor $i$ in $\ProgOrd$.
+        The next instruction to execute in the processor of $S_2$ in the operational model must be a load $L_3$.
+        According to invariant~\ref{inv:i2e:po}, since $S_2$ is not in the prefix of $\ProgOrd$ of processor $i$ up to $L_3$, we have $L_3 \ProgOrd S_2 \Rightarrow L_3 \LSFOrd S_2 \Rightarrow L_3 \MemOrd S_2$.
+        Following the previous argument, $L_3$ cannot be executed because of a store $S_3$ which is before $L_3$ in $\MemOrd$ but is not in $\IIEMemOrd$.
+        That is, $S_3 \MemOrd S_2$ and $S_3$ is not in $\IIEMemOrd$.
+        \item $S_2$ is the local buffer of processor $i$:
+        There are two possible reasons that stops $S_2$ from being dequeued:
+        \begin{enumerate}
+            \item There is a store $S_3 \MemOrd S_2$ and $S_3$ is not in $\IIEMemOrd$.
+            \item The guard of the Dequeue-Store rule is false.
+            Using the previous argument, there must be a store  $S_3 \MemOrd S_2$, and $S_3$ is in the local buffer.
+        \end{enumerate}
+    \end{enumerate}
+    In all cases, we can find a store $S_3 \MemOrd S_2$, and $S_3$ is not in $\IIEMemOrd$.
+    Since the simulation algorithm is assumed to get stuck, we can keep doing this, and find $S_k \MemOrd S_{k-1} \MemOrd \cdots \MemOrd S_1 \MemOrd L_1$, where $S_1\ldots S_k$ are all stores that are not in $\IIEMemOrd$, and $k$ can be infinitely large.
+    However, there can only be finite number of stores before $L_1$ in $\MemOrd$.
+    Therefore, we must be able to find a load $L$ that satisfies the requirements of case~\ref{sim:i2e:ld} of the simulation algorithm.
+    
+    We also need to verify that $L$ can indeed be inserted into $\IIEMemOrd$ as instructed in case~\ref{sim:i2e:ld} of the simulation algorithm.
+    Since both $\MemOrd$ and $\IIEMemOrd$ are total orders, invariant~\ref{inv:i2e:mo-match} ensures that we can cut $\IIEMemOrd$ into two parts, i.e., one part is before $L$ in $\MemOrd$ and the other part is after $L$ in $\MemOrd$.
+    Then we can simply place $L$ at the cutting point of $\IIEMemOrd$.
+    This also ensures that invariant~\ref{inv:i2e:mo-match} will still hold after this step of simulation.
+    
+    Finally we need to show that invariant~\ref{inv:i2e:rf} still holds.
+    Assume $L$ is from processor $i$, loads address $a$, and reads from store $S$ in the Execute-Load rule.
+    Consider where $S$ resides when we fire the Execute-Load rule:
+    \begin{enumerate}
+        \item $S$ is in the local buffer of processor $i$:
+        Since all stores $\MemOrd L$ are already in $\IIEMemOrd$, $S$ does not precede $L$ in $\MemOrd$, i.e., $L\MemOrd S$.
+        Invariant~\ref{inv:i2e:po} implies that $S\ProgOrd L$.
+        Therefore the Load-Value axiom can only select stores $\ProgOrd L$ as the source for the load result.
+        Since all stores for the same address in the same processor are ordered by $\SameAddrOrd$ and thus $\MemOrd$, the Load-Value axiom will pick the youngest store in $\ProgOrd$ among all stores that is before $L$ in $\ProgOrd$.
+        Since $S$ is the most recently executed store for $a$ in processor $i$, invariant~\ref{inv:i2e:po} ensures that $S$ is the store picked by the Load-Value axiom.
+        
+        \item $S$ is already in $\IIEMemOrd$:
+        In this case, the local buffer of processor $i$ cannot have any store for address $a$.
+        Invariant~\ref{inv:i2e:po} says that for any store $S'$ for $a$ which is ordered before $L$ in $\ProgOrd$, $S'$ must have been executed in processor $i$ in the operational model.
+        Therefore, $S'$ must be already in $\IIEMemOrd$.
+        The way we find  $L$ ensures that for any store $S''$ for $a$ that is ordered before $L$ in $\MemOrd$, $S''$ must be in $\IIEMemOrd$.
+        Thus, all stores that are visible to $L$ according to the Load-Value axiom are all in $\IIEMemOrd$ now.
+        Invariants~\ref{inv:i2e:mo-match} and ref{i2e:mo-prefix} both say that the orderings between all such $S'$ and $S''$ are the same in $\IIEMemOrd$ and $\MemOrd$.
+        Since the Execute-Load rule uses the same way as the Load-Value axiom to determine the load value, invariant~\ref{inv:i2e:rf} must hold.
+    \end{enumerate}
+\end{enumerate}
+\end{proof}

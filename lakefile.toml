@@ -1,0 +1,6 @@
+name = "gam-i2e"
+version = "0.1.0"
+defaultTargets = ["GamI2e"]
+
+[[lean_lib]]
+name = "GamI2e"

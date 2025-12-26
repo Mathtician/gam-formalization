@@ -1,0 +1,170 @@
+\section{GAM-I2E: Parameterizing Dependency Ordering}\label{sec:I2E}
+\label{sec:i2e}
+
+In previous sections, we have seen that GAM is not parameterized by dependency orderings, and requires manual tweak on the definitions to produce memory models with a different dependency ordering.
+The major reason is that GAM is designed to be able to allow load-store reordering.
+As stated in Section~\ref{sec:inst-reorder}, allowing load-store reordering means a store may indirectly affect an older load in the same processor.
+This implies that no matter what mechanism an operational model uses, it cannot execute instructions in order.
+Thus, when an operational model wants to execute an instruction $I$, it may not have all the information (e.g., memory access addresses) of instructions that are older than $I$ in the same processor.
+However, in the axiomatic model, such information is always available, and will used in the computation  of $\DepOrd$ edges that point to $I$.
+The lack of information in the operational model makes it difficult to parameterize dependency ordering while keeping the operational and axiomatic models equivalent.
+
+Recently, Zhang et al. have shown that some memory models can be expressed in the form of instantaneous instruction execution (I2E) when load-store reordering is forbidden.
+I2E means that each processor in the operational model executes instructions instantaneously and in order.
+Here we apply that idea, i.e., we force $\OrderedFunc$(Ld, St) to be true (i.e., forbid load-store reordering) to make it possible to express the GAM operational model in I2E.
+In the I2E operational model, for the next instruction $I$ to execute on a processor $i$, we know all the information of all the instructions older than $I$ in processor $i$.
+Thus, the I2E operational model can compute the $\PreservePO$ edges pointing to $I$ using the same way as the axiomatic model does.
+Hence, the I2E operational model knows the same constraint of executing $I$ (i.e., the constraint on placing $I$ in the global order) as the axiomatic model does.
+I2E eliminates the difference in information available to the axiomatic and operational models, making it possible to parameterize the memory model by any form of $\DepOrd$.
+The model is not parametrized by same-address ordering because some same-address ordering are required by single-thread correctness.
+It should be noted that computing the $\PreservePO$ edges pointing to instruction $I$ should not require knowing the execution result of $I$.
+This is true for computing the $\LSFOrd$ and $\SameAddrOrd$ edges defined in GAM.
+This should also be true for most definitions of preserved dependency ordering (i.e., $\DepOrd$).
+
+We refer to this new model as \emph{GAM-I2E}.
+In the following, we give the axiomatic and operational definitions of GAM-I2E, which are parametrized by $\LSFOrd$ and $\DepOrd$, as well as the equivalence proof.
+
+\subsection{Axiomatic Model of GAM-I2E}
+
+The axiomatic model of GAM-I2E is exactly the same as that of GAM in Section~\ref{sec:gam:axiom}.
+The only additional requirement is that $\OrderedFunc$(Ld, St) must be true.
+Given this requirement, one can slightly simplify the definition of $\SameAddrOrd$ by removing case~\ref{ppo:ld->st} from Definition~\ref{def:ppo-same-addr}, because that load-store ordering is already enforced by $\LSFOrd$.
+
+\subsection{Operational Model of GAM-I2E}
+The operational model consists of $n$ processors.
+Each processor executes instructions instantaneously, and contains a local buffer to temporarily keep executed stores and fences.
+The memory system is a list $\IIEMemOrd$ of load and store instructions. (we use suffix $i2e$ to distinguish from the definitions in the axiomatic model).
+In the following, we will also use $\IIEMemOrd$ as a total order of memory instructions in the memory system, i.e., $I_1 \IIEMemOrd I_2$ means that instruction $I_1$ is closer to the list head than $I_2$.
+%We pun on the state holding the data structure and the ordering invariant the state maintains (for example, we say that $\IIEMemOrd$ is a total order instead of a list).
+
+Assume the next instruction to execute on a processor is $I$.
+Let $\IIEProgOrd$ be the execution order of $I$ and all instructions already executed by the processor (i.e., $I$ is the youngest).
+If we treat $\IIEProgOrd$ as a program order, then we can follow the definitions of preserved program order (Section~\ref{sec:ppo}) to compute $\IIEPreservePO$ from $\IIEProgOrd$.
+$\IIEPreservePO$ is the preserved program order among $I$ and all instructions executed by the processor.
+Note that to make this definition meaningful, computing $\IIEPreservePO$ should not require knowing the load value of $I$.
+%\mycomment{If we allow RSW, then this model may not work.}
+It should also be noted that $\IIEPreservePO$ edges grow monotonously.
+To be specific, consider the case that a processor has executed $k$ instructions $I_1 \IIEProgOrd I_2 \IIEProgOrd \cdots \IIEProgOrd I_k$, and we have computed the $\IIEPreservePO$ edges for $I_1\ldots I_k$.
+If the processor executes a new instruction $I_{k+1}$, then the $\IIEPreservePO$ edges for $I_1\ldots I_{k+1}$ will contain all the previously computed $\IIEPreservePO$ edges for $I_1\ldots I_k$, and all the newly added edges will point to $I_{k+1}$.
+This is because whether instructions $I$ and $I'$ are ordered by preserved program order is fully determined by $I$, $I'$ and instructions between $I$ and $I'$ in the program order.
+
+With the above definitions, now we give the rules for the operational moddel of GAM-I2E.
+\begin{itemize}
+    \item \textbf{Rule Execute-Reg-Branch:} Execute a reg-to-reg or branch instruction $I$. \\
+    \emph{Guard:} True. \\
+    \emph{Action:} Execute $I$ and update local register states.
+    
+    \item \textbf{Rule Execute-Store-Fence:} Execute a store or fence instruction $I$. \\
+    \emph{Guard:} True. \\
+    \emph{Action:} Insert $I$ into the local buffer.
+    
+    \item \textbf{Rule Execute-Load:} Execute a load $L$ for address $a$. \\
+    \emph{Guard:} There is no instruction $I$ in the local buffer that is ordered before $L$ in $\IIEPreservePO$. \\
+    \emph{Action:} Insert $L$ into an arbitrary place in list $\IIEMemOrd$ such that for any memory instruction $I$ which is ordered before $L$ in $\IIEPreservePO$, $L$ is after $I$ in $\IIEMemOrd$.
+    With the updated $\IIEMemOrd$, we can determine the load value of $L$ in the following way:
+    \begin{enumerate}
+        \item If the local buffer contains any store for $a$, then $L$ reads from the youngest (i.e., most recently inserted) store for $a$ in the local buffer.
+        \item Otherwise, $L$ reads from the youngest store for $a$ in $\IIEMemOrd$ that is from the same processor of $L$ or is older than $L$ in $\IIEMemOrd$.
+    \end{enumerate}
+    
+    \item \textbf{Rule Dequeue-Store:} Dequeue a store $S$ from the local buffer to the memory system. \\
+    \emph{Guard:} There is no instruction in the local buffer that is ordered before $S$ in $\IIEPreservePO$. \\
+    \emph{Action:} Remove $S$ from the local buffer, and append $S$ to the end of $\IIEMemOrd$ (i.e., $S$ becomes the youngest in $\IIEMemOrd$).
+    
+    \item \textbf{Rule Dequeue-Fence:} Dequeue a fence $F$ from the local buffer. \\
+    \emph{Guard:} There is no instruction in the local buffer that is ordered before $F$ in $\IIEPreservePO$. \\
+    \emph{Action:} Remove $F$ from the local buffer.
+\end{itemize}
+
+\subsection{Soundness: GAM-I2E Operational Model $\subseteq$ GAM-I2E Axiomatic Model}
+\begin{theorem}
+    GAM-I2E operational model $\subseteq$ GAM-I2E axiomatic model
+\end{theorem}
+\begin{proof}
+The goal is to show that for any execution of the GAM-I2E operational model, we can construct $\langle \ProgOrd, \MemOrd, \ReadFrom\rangle$ which satisfies the GAM-I2E axioms and has the same program behavior as the operational execution.
+$\ProgOrd$ is the order of executing instructions in each processor of the operational model.
+$\ReadFrom$ is constructed according to the Execute-Load rule, i.e., if the Execute-Load rule picks store $S$ to satisfy a load $L$, then $S\ReadFrom L$.
+$\MemOrd$ is the $\IIEMemOrd$ at the end of the operational execution.
+We need to show that $\langle \ProgOrd, \ReadFrom, \MemOrd \rangle$ satisfies the axioms.
+It should be noted that $\IIEProgOrd$ and $\IIEPreservePO$ always matche $\ProgOrd$ and $\PreservePO$ respectively during the operational execution.
+That is, when an instruction $I$ of processor $i$ is executed in the operational execution, $\IIEProgOrd$ and $\IIEPreservePO$ of instructions executed by processor $i$ (including $I$) satisfies the following invariants:
+\begin{itemize}
+    \item $\IIEProgOrd$ is a prefix of $\ProgOrd$ (of processor $i$) up to $I$ (including $I$).
+    \item For any instructions $I_1 \PreservePO I_2$ from processor $i$, if $I_1$ and $I_2$ are not ordered after $I$ in $\ProgOrd$ (i.e., $I_2$ may be equal to $I$), then $I_1 \IIEPreservePO I_2$.
+    \item For any instructions $I_1$ and $I_2$, if $I_1 \IIEPreservePO I_2$, then $I_1 \PreservePO I_2$.
+\end{itemize}
+
+With above invariants, we prove that the Inst-Order axiom is satisfied by contradiction, i.e., we assume there are two memory instructions $I_1$ and $I_2$ from processor $i$ such that $I_1 \PreservePO I_2$ but $I_2 \MemOrd I_1$.
+In the operational model, when $I_2$ is executed, $I_1$ must have been executed, and $I_1$ is ordered before $I_2$ in $\IIEPreservePO$ according to the invariants.
+At the time when $I_2$ is executed, $I_1$ can only be in one of the following two places:
+\begin{enumerate}
+    \item $I_1$ is already in the memory system:
+    In this case, if $I_2$ is a load, then the Execute-Load rule ensures that $I_2$ is placed after $I_1$ in $\IIEMemOrd$.
+    If $I_2$ is a store, it can only be appended to the end of $\IIEMemOrd$, and is still after $I_1$ in $I\IIEMemOrd$.
+    
+    \item $I_1$ is in the local buffer:
+    In this case, $I_1$ must be a store.
+    $I_2$ must also be a store (otherwise if $I_2$ is a load, the guard of Execute-Load rule will be false due to $I_1$ in the local buffer).
+    And $I_2$ is inserted into the local buffer.
+    The Dequeue-Store rule ensures that $I_1$ will be appended to $\IIEMemOrd$ before $I_2$, so $I_1$ is still before $I_2$ in $\IIEMemOrd$.
+\end{enumerate}
+$I_1\IIEMemOrd I_2$ implies that $I_1\MemOrd I_2$, contradicting with the initial assumption.
+Thus the Inst-Order axiom is satisfied.
+
+Now we show that the Load-Value axiom is also satisfied.
+Consider a load $L$ for address $a$ from processor $i$ which reads from a store $S$ in the operational execution.
+When the Execute-Load rule executes $L$, we consider where $S$ resides:
+\begin{enumerate}
+    \item $S$ is in the local buffer of processor $i$:
+    $S$ will be appended to $\IIEMemOrd$ later, so $S$ must be after $L$ in $\MemOrd$.
+    Since we already have $S \ProgOrd L$ and $L\MemOrd S$, the Load-Value axiom will only pick stores that are before $L$ in $\ProgOrd$.
+    Now we consider such a store $S'$ ($\neq S$) for $a$ which is before $L$ in $\ProgOrd$.
+    Note that $S$ is the most recently inserted store for $a$ when $L$ is executed.
+    Thus, when $S$ is executed by processor $i$, $S'$ must have been executed, and we have $S' \IIEProgOrd S \Rightarrow S' \IIEPreservePO S$ at that time (according the definition of same-address ordering).
+    Therefore, $S'$ is appended to $\IIEMemOrd$ before $S$, and thus $S'\MemOrd S$.
+    As a result, the Load-Value axiom also agrees on $S\ReadFrom L$.
+    
+    \item $S$ is already in $\IIEMemOrd$:
+    When $L$ is executed, the local buffer of processor $i$ cannot contain any store for $a$ according to the guard of the Execute-Load rule.
+    Thus, all stores for $a$ that are before $L$ in $\ProgOrd$ are already in $\IIEMemOrd$ at that time.
+    Since stores can only be appended to the end of $\IIEMemOrd$, all stores for $a$ that are before $L$ in $\MemOrd$ are also in $\IIEMemOrd$ by the time when $L$ is executed.
+    Then the way that the Execute-Load rule determines the load value of $L$ is exactly the same as the Load-Value axiom.
+\end{enumerate}
+\end{proof}
+
+\subsection{Completeness: GAM-I2E Axiomatic Model $\subseteq$ GAM-I2E Operational Model}
+\begin{theorem}
+    GAM-I2E axiomatic model $\subseteq$ GAM-I2E operational model.
+\end{theorem}
+\begin{proof}
+The goal is that for any legal axiomatic relations $\langle \ProgOrd, \MemOrd, \ReadFrom\rangle$ (which satisfy the GAM-I2E axioms), we can run the GAM-I2E operational model to simulate the same program behavior.
+In each step of the simulation, we first decide which rule to fire in the operational model based on the current state of the operational model and $\MemOrd$, and then we fire that rule.
+Here is the algorithm to determine which rule to fire in each simulation step:
+\begin{enumerate}
+    \item If in the operational model there is a processor whose next instruction is not a load, we fire an Execute-Reg-Branch or Execute-Store-Fence rule to execute that instruction in the operational model.
+    \item If the above case does not apply, and in the operational model there is a fence that can be dequeued from the local buffer, then we fire the Dequeue-Fence rule to dequeue that fence in the operational model.
+    \item \label{sim:i2e:st} If neither of the above cases applies, and in the operational model there is a store $S$ in the local buffer of a processor, and $S$ can be dequeued from the local buffer (i.e., the guard for the Dequeue-Store rule is true), and all stores before $S$ in $\MemOrd$ are already in $\IIEMemOrd$, then we fire a Dequeue-Store rule to dequeue $S$ in the operational model.
+    \item \label{sim:i2e:ld} If none of the above cases applies, then in the operational model there must be a processor such that the next instruction of the processor is a load $L$, and $L$ can be executed (i.e., the guard for the Execute-Load rule is true), and all stores before $L$ in $\MemOrd$ are already in $\IIEMemOrd$.
+    We fire an Execute-Load rule to execute $L$ in the operational model.
+    In the Execute-Load rule of $L$, we insert $L$ into $\IIEMemOrd$ such that for any instruction $I$ already in $\IIEMemOrd$, if $I \MemOrd L$ then $I \IIEMemOrd L$, otherwise $L \IIEMemOrd I$.
+\end{enumerate}
+After each step of the simulation, we keep the following invariants:
+\begin{enumerate}
+    \item \label{inv:i2e:po} The execution order on each processor is a prefix of the $\ProgOrd$ of that processor.
+    \item The result of each executed instruction is the same as that in $\ProgOrd$.
+    \item \label{inv:i2e:rf} The store read by each executed load is the same as that indicated by the $\ReadFrom$ edges.
+    \item \label{inv:i2e:stuck} The simulation cannot get stuck.
+    \item \label{inv:i2e:mo-match} For two memory instruction $I_1$ and $I_2$, if $I_1 \IIEMemOrd I_2$ in the operational model, then $I_1 \MemOrd I_2$ in the axiomatic relations.
+    \item \label{inv:i2e:mo-prefix} The order of all stores in $\IIEMemOrd$ is a prefix of the order of all stores in $\MemOrd$.
+\end{enumerate}
+The first two induction invariants imply that \emph{before} each simulation step, the following properties hold for each processor $i$ (assuming the next instruction of the processor is $I$):
+\begin{enumerate}
+    \item $\IIEProgOrd$ is a prefix of $\ProgOrd$ (of processor $i$) up to $I$ (including $I$).
+    \item For any instructions $I_1 \PreservePO I_2$ from processor $i$, if $I_1$ and $I_2$ are not ordered after $I$ in $\ProgOrd$ (i.e., $I_2$ may be equal to $I$), then $I_1 \IIEPreservePO I_2$.
+    \item \label{prop:i2e:ppo} For any instructions $I_1$ and $I_2$, if $I_1 \IIEPreservePO I_2$, then $I_1 \PreservePO I_2$.
+\end{enumerate}
+The detailed proof for these invariants can be found in Appendix~\ref{sec:i2_op_contain_axi}.
+\end{proof}
+
+It should be noted that the above models and proofs of GAM-I2E do not rely on the specific forms of $\DepOrd$ or $\LSFOrd$.
+Therefore, GAM-I2E is fully parametrized by $\DepOrd$ and $\LSFOrd$.

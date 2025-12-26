@@ -1,0 +1,198 @@
+\section{Comparing GAM with Existing Atomic Memory Models}\label{sec:instance}
+
+Now that we have defined our three model formulations and completed the proofs of equivalence, we can now show how GAM is related to existing atomic memory models.
+Most atomic memory models already have the same axioms as GAM, so our commparison will base off from the definitions of $\PreservePO$.
+In some cases, the existing memory model can be instantiated from GAM.
+While in other cases, the dependency ordering or same-address load-load ordering of an existing model does not match that in GAM, and we will explain the difference and possible ways to tweak GAM to match the existing model.
+
+\subsection{SC}
+SC has no fence, the memory/fence ordering enforced by SC is shown in Table~\ref{tab:order-sc}.
+\begin{table}[!htb]
+    \centering
+    \begin{tabular}{|l|l|l|}
+        \hline
+        \backslashbox{$I_{old}$}{$I_{new}$} & Ld   & St   \\ \hline
+        Ld                                  & True & True \\ \hline
+        St                                  & True & True \\ \hline
+    \end{tabular}
+    \caption{Memory/fence orderings for SC: $\OrderedFunc_{SC}(I_{old}, I_{new})$}\label{tab:order-sc}
+\end{table}
+
+After supplying $\OrderedFunc_{SC}$ to GAM, $\PreservePO$ in the GAM axiomatic instance will order every pair of memory instructions from the same processor.
+In this case, the Load-Value axiom will reduce to
+\begin{displaymath}
+\mathsf{St}\ a\ v \ReadFrom \mathsf{Ld}\ a \Rightarrow
+\mathsf{St}\ a\ v = \max_{mo}\{
+\mathsf{St}\ a\ v' \MemOrd \mathsf{Ld}\ a \}
+\end{displaymath}
+This is because $I_1\ProgOrd I_2$ implies $I_1\PreservePO I_2\Rightarrow I_1\MemOrd I_2$.
+Thus, the GAM axiomatic instance is equivalent to SC.
+In the operational instance of GAM, the SC-$\OrderedFunc$ function makes the guards of Execute-Load and Execute-Store rules to wait for all previous memory instructions to be done.
+This is also the same as SC.
+
+\subsection{TSO}
+TSO has only one fence, and the memory/fence ordering enforced by TSO is shown in Table~\ref{tab:order-tso}.
+The TSO axiomatic model defines a $\PreservePO$ edge from instructions $I_1$ to $I_2$ iff $\OrderedFunc_{TSO}(I_1, I_2)$.
+When supplying GAM with the $\OrderedFunc_{TSO}$ function, the $\PreservePO$ of the resulting GAM axiomatic instance is the same as that of TSO axiomatic model, since $\DepOrd$ and $\SameAddrOrd$ are entirely contained within $\OrderedFunc_{TSO}$.
+In other words, all load-load, load-store, and store-store orderings are automatically enforced anyway, so there is no need to worry about any particular subset of such orderings.
+\begin{comment}
+except that $\PreservePO$ in GAM additionally contains $\DepOrd$ and $\SameAddrOrd$ edges.
+It is easy to show that $\DepOrd$ and $\SameAddrOrd$ are in fact redundant in this case.
+This is because $\PreservePO$ is only used to constrain $\MemOrd$, the order of memory instructions.
+The only ordering of memory instructions that is not enforced by $\LSFOrd$ is between an older store and a younger load.
+Since $\DepOrd$ and $\SameAddrOrd$ cannot contribute to building this ordering, we can drop them, and then the GAM axiomatic instance becomes exactly the same as TSO.
+\end{comment}
+In the operational instance of GAM, the TSO-$\OrderedFunc$ function will cause the guard of the Execute-Load rule to wait for all older loads in ROB to be done, and cause the guard of the Execute-Store rule to wait for all older memory instructions to be done.
+%These two changes model $\LSOrd$, making the operational model of GAM still match the axiomatic model of GAM.
+
+\subsection{SPARC RMO}\label{sec:compare-rmo}
+RMO has various fences, and the memory/fence orderings enforced by RMO are shown in Table~\ref{tab:order-rmo}.
+RMO also enforces the ordering between dependent instructions.
+However, there is a bug in the dependency definition in RMO~\cite{wmm}.
+For the sake of comparison, we consider this to be a mistake rather than an intentional deviation, and hence we simply assume a corrected version of RMO that has the same definition of dependency ordering as GAM does.
+
+When we supply the $\OrderedFunc_{RMO}$ function to GAM, the resulting GAM axiomatic instance is very close to but slightly different from the RMO axiomatic model.
+The difference is that RMO does not order loads for the same address.
+Same-address load-load reordering is a subtle issue (see Section~\ref{sec:compare-arm}) and a common source of implementation bugs~\cite{arm:llh}, but by modern standards RMO's approach is considered overly aggressive.
+Nevertheless, for completeness we describe how GAM could be tweaked to allow same-address load-load reordering: we can simply tweak the axiomatic definition of GAM by removing case \ref{ppo:ld->ld} from the definition of $\SameAddrOrd$ (Definition~\ref{def:ppo-same-addr}).
+After this removal, the GAM axiomatic instance becomes exactly the same as RMO.
+
+The challenge is then to tweak the GAM operational instance to keep it equivalent to the axiomatic instance.
+In the GAM operational instance, we relax the Execute-Load rule by making the ROB search ignore loads for the same address.
+Also, in the Compute-Mem-Addr rule that computes the address of a \emph{load}, the ROB search in the rule should ignore younger loads for the same address.
+These two changes relax the ordering between loads for the same address, making the operational instance of GAM still match the axiomatic instance of GAM.
+
+\subsection{WMM}
+
+WMM~\cite{wmm} has two fences: Commit and Reconcile, and the memory/fence orderings enforced by WMM are shown in Table~\ref{tab:order-wmm}.
+The ordering between Commit and Reconcile is particularly important in WMM, as preventing store-load reordering requires the combination of a Commit and a Reconcile.
+
+\begin{table}[!htb]
+    \centering
+    \begin{tabular}{|l|l|l|l|l|}
+        \hline
+        \backslashbox{$I_{old}$}{$I_{new}$} & Ld    & St    & Commit & Reconcile \\ \hline
+        Ld                                  & False & True  & True   & True \\ \hline
+        St                                  & False & False & True   & False \\ \hline
+        Commit                              & False & True  & True   & True \\ \hline
+        Reconcile                           & True  & True  & True   & True \\ \hline
+    \end{tabular}
+    \caption{Memory/fence orderings for WMM: $\OrderedFunc(I_{old}, I_{new})$}\label{tab:order-wmm}
+\end{table}
+
+%When we supply the WMM-$\OrderedFunc$ function to GAM, the resulting GAM axiomatic instance is very close to but slightly different from the WMM axiomatic model.
+%The difference is that
+WMM does not enforce any dependency ordering (although all load-store ordering is automatically enforced).
+Therefore, in order to make GAM match WMM, we must first tweak the axiomatic definition of GAM by dropping $\DepOrd$.
+After this change, one subtle difference still remains.
+Consider a scenario in which $L_1 \ProgOrd S \ProgOrd L_2$, where $L_1$ and $L_2$ are both loads for address $a$ and $S$ is store for $a$.
+GAM does not directly require $L_1$ and $L_2$ to be ordered in $\MemOrd$ due to the intervening store, but WMM does require $L1 \MemOrd L_2$.
+However, it turns out that the two are actually equivalent in this case, because we can transform the $\MemOrd$ in GAM to a legal $\MemOrd$ in WMM (i.e., one that obeys $\PreservePO$ in WMM).
+
+During the transformation, the store read by each load determined by the Load-Value axiom will not change.
+In each transformation step, for a processor $i$, we find one such potential counterexample scenario: a load $L_2$ which is the youngest load in the $\ProgOrd$ of processor $i$ which is $\MemOrd$-before an older load $L_1$ from processor $i$ for the same address.
+This gives us $L_1\ProgOrd L_2$ and $L_2\MemOrd L_1$.
+%Assume the address accessed by both is $a$.
+Since this reordering is allowed by GAM, there must be store for $a$ between $L_1$ and $L_2$ in the $\ProgOrd$ of processor $i$.
+The transformation is to move $L_2$ to be right after $L_1$ in $\MemOrd$.
+This is legal because no WMM ordering primitive can cause an instruction to be ordered after $L_2$ without also being ordered after $L_1$.
+It also does not affect the value returned by $L_1$, nor does it affect any instruction originally older than $L_2$ in $\MemOrd$.  
+%\mycomment{(Dan to Sizhuo: please check/correct.  I want to make sure I understand properly why this works without deps but not with deps)}.  It does however reduce one reordering of loads for the same address.
+By repeating the above steps, we can complete the transformation until no such apparent contradictions remain.
+Therefore, the axiomatic instance of GAM is equivalent to WMM.
+
+We also need to tweak the GAM operational instance to keep it equivalent to the axiomatic instance.
+In the operational instance of GAM, if a Fetch rule fetches a load into the ROB, we predict the load value and record it in the new ROB entry.
+Younger instructions in ROB can read the predicted load value for computation.
+In the Execute-Load rule, if the load is marked as done, then we compare the read value with the previously predicted value.
+In case they are not equal, we kill all instructions younger than the load in ROB.
+Introducing load-value prediction relaxes dependency ordering, making the operational instance of GAM still match the axiomatic instance of GAM.
+
+\subsection{ARM v8.2}\label{sec:compare-arm}
+
+As of March 2017, ARM completely revamped its memory consistency model.
+The end result looks very similar to GAM, with $\FenceOrd$ defined to include \texttt{DMB LD} (load-to-load/store), \texttt{DMB ST} (store-to-store), Load-Acquire (ordered with subsequent loads/stores), and Store-Release (ordered with prior loads/stores).
+There is, however, one main exception: ARM allows read-same-write (RSW) behavior (Figure~\ref{fig:rsw}): two loads which return the value written by the same write are \emph{not} ordered in $\PreservePO$.
+In particular, in Figure~\ref{fig:rsw}, the two loads of $z$ are not ordered on ARM, even though they are two loads of the same address with no intervening store.
+If the two loads read from \emph{different} stores (e.g., the RDW behavior in Figure~\ref{fig:rsw}), however, the outcome is forbidden.
+
+\begin{figure}[!htb]
+    \centering
+  \begin{tabular}{l||l}
+    St $x$, $1$ & Ld r1, $y$ (=1)       \\
+    Fence       & Ld r2, $z+r1-r1$ (=0) \\
+    St $y$, $1$ & Ld r3, $z$ (=0)       \\
+                & Ld r4, $x+r3-r3$ (=0) \\
+  \end{tabular}
+  \hspace{1cm}
+  \begin{tabular}{l||l}
+    St $x$, $1$ & Ld r1, $y$ (=1)       \\
+    Fence       & Ld r2, $z+r1-r1$ (=1) \\
+    St $y$, $1$ & Ld r3, $z$ (=2)       \\
+                & Ld r4, $x+r3-r3$ (=0) \\
+  \end{tabular}
+  \caption{The read-same-writes (RSW, left) litmus test is forbidden under GAM but permitted by ARM.
+      The read-different-writes (RDW, right) litmus test is forbidden under both ARM and GAM.
+      Both tests are the same, but ARM makes a distinction based on the values returned by the loads.}
+  \label{fig:rsw}
+\end{figure}
+
+We feel the subtlety in allowing the RSW behavior while forbidding the RDW behavior may lead to confusion.
+Besides, there is no published evidence showing that having this subtlety can lead to higher performance in implementations.
+Therefore, definition~\ref{def:ppo-same-addr}.\ref{ppo:ld->ld} of GAM was carefully chosen to forbid the RSW behavior, while still allowing so-called ``fri-rfi'' behavior (Figure~\ref{fig:fri_rfi}) which can result from local store forwarding in implementations.
+
+\begin{figure}[!htb]
+  \centering
+  \begin{tabular}{l||l}
+    St $x$, $1$ & Ld r1, $y$ (=1)       \\
+    Fence       & St $y$, $2$           \\
+    St $y$, $1$ & Ld r2, $y$ (=2)       \\
+                & Ld r3, $x+r2-r2$ (=0) \\
+  \end{tabular}
+  \caption{The MP+fence+fri-rfi-addr litmus test.}
+  \label{fig:fri_rfi}
+\end{figure}
+
+\subsection{Alpha}
+
+Alpha's memory model is similar to GAM with one single fence, but it is strictly weaker in that it
+%GAM relies takes a conservative approach when it comes to branches. In
+does not enforce any dependencies, including even load-store dependencies.  Alpha therefore allows the behavior in Figure \ref{fig:alpha}, while GAM does not.
+
+\begin{figure}[t]
+    \centering
+  \begin{tabular}{l||l}
+    Ld r1, $x$ (=1) & Ld r2, $y$ (=1)\\
+    If r1 == 0      & St $x$, r2\\
+    then St $y$, 1  &\\
+    else St $y$, 1  &\\
+  \end{tabular}
+  \caption{Alpha is more relaxed to reorder stores before branches}
+  \label{fig:alpha}
+\end{figure}
+
+It is possible to remove all dependency orderings from the GAM axiomatic model in order to account for this behavior, but doing so in the operational model would be a substantial challenge (just as it would be in any real microarchitecture).  It is not generally possible to perform speculative stores, as there is no way to undo a failed speculation, so the operational model that produces such behaviors would necessarily be somewhat contrived.
+In any case, such behaviors are no longer produced in more modern memory model definitions, and so we do not attempt to adapt the GAM operational model to account for speculative load-store dependency reordering.
+
+\subsection{RISC-V}
+The RISC-V model is not yet finalized, but it is likely to use a model very similar to GAM.
+For comparison, we include the basics of the expected model below.
+Note in particular that Release is not ordered with Acquire, in contrast to how WMM does order Commit with Reconcile.
+
+\begin{figure}[!htb]
+    \centering
+    \begin{tabular}{|l|l|l|l|l|l|}
+        \hline
+        \backslashbox{$I_{old}$}{$I_{new}$} & Ld    & St    & Release & Acquire & Full \\ \hline
+        Ld                                  & False & False & True    & True    & True \\ \hline
+        St                                  & False & False & True    & False   & True \\ \hline
+        Release                             & False & True  & True    & False   & True \\ \hline
+        Acquire                             & True  & True  & True    & True    & True \\ \hline
+        Full                                & True  & True  & True    & True    & True \\ \hline
+    \end{tabular}
+    \caption{Memory/fence orderings for RISC-V: $\OrderedFunc_{RISC\Hyphen{}V}(I_{old}, I_{new})$}
+    \label{tab:riscv}
+\end{figure}
+
+This model presents all of the best features of GAM: a minimal set of dependency orderings that are nevertheless up to modern standards, a flexible and performant yet easy-to-define set of fences, and a reasonably-minimal set of same-address orderings.
+It can also be adapted to the needs of any subtle variant or modification by simply changing the set of fences that are included in Table~\ref{tab:riscv}.  As such, if RISC-V adopts GAM, it will be the first modern architecture allowing load-store reordering to come complete with a proper axiomatic model, a proper operational model, and a full proof of equivalence.

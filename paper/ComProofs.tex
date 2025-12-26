@@ -1,0 +1,134 @@
+\section{Equivalence of COM and GAM}
+\label{sec:gamcom}
+
+We first define one more derived relation:
+\begin{itemize}
+  \item Reads-from internal ($\Rfi$), which is the subset of $\ReadFrom$ for which both the read and the write are in the same thread
+\end{itemize}
+
+\subsection{GAM $\subseteq$ COM}
+
+\begin{lemma}\label{lem:app_com_in_memord}
+  All of $\Rfe$, $\Coh$, $\Fr$, and $\PreservePO$ are contained in $\MemOrd$.
+\end{lemma}
+\begin{proof}
+  Two of the four cases are easy: $\Coh$ is contained in $\MemOrd$ by construction, and $\PreservePO$ is contained in $\MemOrd$ by the Inst-Order axiom.
+
+  By the Load-Value axiom, if for any write $w$ and read $r$, if $w\ReadFrom r$, then $w$ precedes $r$ either in $\ProgOrd$ or in $\MemOrd$.  The former is ruled out in the definition of $\Rfe$, and hence $w$ must precede $r$ in $\MemOrd$.
+
+  The proof for $\Fr$ proceeds by contradiction.  Suppose there is some write $w$ and some read $r$ such that $r\Fr w$ and $w\MemOrd r$.  Then by definition of $\Fr$, there is some other write $w'$ such that $w'\ReadFrom r$ and $w'\Coh w$.  Furthermore, since $\Coh\subseteq\MemOrd$, we have $w'\MemOrd w\MemOrd r$.  This, however, contradicts the Load-value axiom, as $w'$ is not the $\MemOrd$-maximal candidate write.
+\end{proof}
+
+The SC-per-Location axiom will take a bit more work to prove.
+To start, define $\Eco$ as the union of the following relations:
+\begin{itemize}
+  \item $\Coh$ (Write to Write)
+  \item $\Fr$ (Read to Write)
+  \item ${\Coh}^*;\ReadFrom$ (Write to Read)
+  \item $\RfInv;{\Coh}^*;\ReadFrom$ (Read to Read)
+\end{itemize}
+
+\begin{lemma}\label{lem:app_eco_either}
+  For all pairs $i_1$, $i_2$ of memory accesses to the same address, either $i_1\Eco i_2$ or $i_2\Eco i_1$.
+\end{lemma}
+\begin{proof}
+  By construction.  All pairs of same-address writes are ordered in $\Coh$ by definition.  For any read $r$ and write $w$, let $w'$ be the write such that $w'\ReadFrom r$.  Then either:
+  \begin{itemize}
+    \item $w=w'$, so $w\ReadFrom r$, and hence $w{\Coh}^*;\ReadFrom r$,
+    \item $w\Coh w'$, so $w\Coh;\ReadFrom r$, and hence $w{\Coh}^*;\ReadFrom r$, or
+    \item $w'\Coh w$, so $r\RfInv;\Coh w$, and $r\Fr w$.
+  \end{itemize}
+  Likewise, for any two reads $r_1$ and $r_2$, let $w_1$ and $w_2$ be the writes such that $w_1\ReadFrom r_1$ and $w_2\ReadFrom r_2$.  Then either:
+  \begin{itemize}
+    \item $w_1=w_2$, so $r_1\RfInv;\ReadFrom r_2$, and hence $r_1\RfInv;{\Coh}^*;\ReadFrom r_2$,
+    \item $w_1\Coh w_2$, so $r_1\RfInv;\Coh;\ReadFrom r_2$, and hence $r_1\RfInv;{\Coh}^*;\ReadFrom r_2$,
+    \item $w_2\Coh w_1$, so $r_2\RfInv;\Coh;\ReadFrom r_1$, and hence $r_2\RfInv;{\Coh}^*;\ReadFrom r_1$.
+  \end{itemize}
+\end{proof}
+
+If $i_1$ and $i_2$ are related in program order, then the $\Eco$ direction must match:
+\begin{lemma}\label{lem:app_eco_poloc}
+  If $i_1\PoLoc i_2$, then $i_1\Eco i_2$.
+\end{lemma}
+\begin{proof}
+  By Lemma \ref{lem:app_eco_either}, either $i_1\Eco i_2$ or $i_2\Eco i_1$.  We show that the latter always results in a contradiction (except for one case in which it overlaps with the former).
+  \begin{itemize}
+    \item If $i_1$ and $i_2$ are both writes, then $i_1\PoLoc i_2\Coh i_1$, so $i_1\PoLoc i_2\MemOrd i_1$, which contradicts Definition~\ref{def:ppo-same-addr}.\ref{ppo:st->st}.
+    \item If $i_1$ is a read and $i_2$ is a write, then suppose $i_2{\Coh}^*~i\ReadFrom i_1$ for some $i$.  If $i_2=i$, then by the LoadValue axiom, either $i_2\PoLoc i_1$, which contradicts the hypothesis, or $i_2\MemOrd i_1$, which contradicts Definition~\ref{def:ppo-same-addr}.\ref{ppo:ld->st}.
+    Therefore, suppose $i_2\Coh i\ReadFrom i_1$.  If $i\Rfe i_1$, then $i_1\PreservePO i_2\Coh i\Rfe i_1$ by Definition~\ref{def:ppo-same-addr}.\ref{ppo:ld->st}, which contradicts Causality.
+    If $i\Rfi i_1$, then $i\PoLoc i_1$; otherwise, by the LoadValue axiom, $i_1\MemOrd i$, which contradicts Definition~\ref{def:ppo-same-addr}.\ref{ppo:ld->st}. %\ref{def:ppo-same-addr}.\ref{ppo:ld->st}.
+    However, this means $i\PoLoc i_2\Coh i$, which again contradicts Definition~\ref{def:ppo-same-addr}.\ref{ppo:st->st}.
+    \item If $i_1$ is a write and $i_2$ is a read, then suppose $i_2\Fr i_1$, and let $i$ be the write such that $i\ReadFrom i_2$ and $i\Coh i_1$.  Since $i\MemOrd i_1$, $i$ is not the $\MemOrd$-maximal store from which $i_2$ should read, and the LoadValue axiom is violated.
+    \item If $i_1$ and $i_2$ are both reads, then suppose $i_2\RfInv i_3\Coh i_4\ReadFrom i_1$ for some $i_3$ and $i_4$.  (The case $i_2\RfInv;\ReadFrom i_1$ implies $i_1\Eco i_2$.)  Then $i_2\Fr i_4$.  If $i_4\Rfi i_1$, then $i_4\PoLoc i_2\Fr i_4$, which as we have already seen in the previous case is forbidden.  If $i_4\Rfe i_1$, then either there is some write $i_5$ such that $i_1\PoLoc i_5\PoLoc i_2$, or there is no such write.  If $i_5$ exists, then $i_4\Coh i_5$, $i_3\Coh i_5$, and $i_2\Fr i_5\PoLoc i_2$, which as we have already seen is forbidden.  If $i_5$ does not exist, then $i_1\PreservePO i_2\Fr i_4\Rfe i_1$, which contradicts Causality.
+  \end{itemize}
+\end{proof}
+
+\begin{theorem}
+  The SC-per-Location axiom is satisfied.
+\end{theorem}
+\begin{proof}
+  First, by Lemma~\ref{lem:app_eco_poloc}, all $\PoLoc$ edges involving at least one write can be converted into sequences containing only $\ReadFrom$, $\Coh$, and $\Fr$.  So we consider only cycles with $\ReadFrom$, $\Coh$, $\Fr$, and read-to-read $\PoLoc$ edges.  Among such cycles, first consider cycles with no $\Coh$ or $\Fr$ edges.  Such cycles cannot contain $\ReadFrom$ either, because neither $\ReadFrom$ nor read-read $\PoLoc$ edges can end at a write node, and so there cannot be a source for $\ReadFrom$ relations.  This leaves a cycle consisting only of $\PoLoc$, which is a contradiction.
+
+  Now, consider cycles with at least one $\Coh$ or $\Fr$ edge.  Replace every instance of read-read $\PoLoc$ in the cycle with $\RfInv;{\Coh}^*;\ReadFrom$ per Lemma~\ref{lem:app_eco_poloc}.  Now, because $\Coh$ and $\Fr$ both target writes, every appearance of $\RfInv$ must be preceded either by $\ReadFrom$ or by $\RfInv;{\Coh}^*;\ReadFrom$.  In particular, every appearance of $\RfInv$ must be preceded directly by $\ReadFrom$.  Since $\ReadFrom;\RfInv$ is the identity function, all appearances of $\RfInv$ in the cycle can be eliminated by simply removing each $\ReadFrom;\RfInv$ pair in the cycle.  This leaves a cycle with only $\ReadFrom$, $\Coh$, and $\Fr$.
+  If there are any reads in such a cycle, then by similar logic as above, the incoming relation must be $\ReadFrom$ and the outgoing relation must be $\Fr$, but this pair is equivalent to a $\Coh$ edge between writes alone.  Repeating such a transformation produces a cycle consisting of only $\Coh$.  Since by hypothesis there is at least one such $\Coh$ edge, this is a contradiction.
+\end{proof}
+
+\newpage
+\section{Alloy Model for Empirical Validation}
+\label{sec:alloy}
+
+Figure~\ref{fig:alloy} shows the Alloy model used for validation.
+
+\lstdefinelanguage{alloy}{
+  morekeywords={abstract, sig, extends, pred, fun, fact, no, set, one, lone, let, not, all, iden, some, run, for},
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{green!40!black},
+  keywordstyle=\color{blue!40!black},
+  moredelim=**[is][\color{red}]{@}{@},
+  escapeinside={!}{!},
+}
+\lstset{language=alloy}
+\lstset{aboveskip=0pt}
+\lstset{belowskip=0pt}
+
+\begin{figure}[h!]
+  \tt\bfseries\centering\footnotesize
+  \begin{lstlisting}
+// Model of memory
+sig Address {}
+abstract sig Event {
+  po: lone Event, ppo: set Event, mo: set Event, address: one Address }
+sig Read extends Event {}
+sig Write extends Event { rf: set Read }
+fun po_loc : Event->Event { ^po & address.~address }
+fact { acyclic[po] }
+fact { rf.~rf in iden }
+fact { total[mo, Event] } // definition of total omitted for space
+fact { (Write <: po_loc :> Write) + (Read <: po_loc :> Write)
+  + (Read <: (po_loc - (po_loc.po_loc)) :> Read) in ppo }
+
+// GAM axioms
+fun candidates[r: Read] : set Write {
+  (r.~mo & Write & r.address.~address) // writes preceding r in <mo
+  + (r.^~po & Write & r.address.~address)} // writes preceding r in <po
+pred InstOrder { ppo in mo }
+pred LoadValue { all w: Write | all r: Read |
+  w->r in rf <=> w in (let c = candidates[r] | c - c.~mo)} // i.e., max_<mo
+pred GAM { InstOrder and LoadValue }
+
+// COM axioms
+fun rfe : Write->Read { rf - (^po + ^~po) }
+fun co : Write->Write { Write <: ((address.~address) & mo) :> Write }
+fun fr : Read->Write { ~rf.co + ((Read - Write.rf) <: address.~address :> Write) }
+pred SC_per_Location  { acyclic[rf + co + fr + po_loc] }
+pred Causality { acyclic[rfe + co + fr + ppo] }  // def. of acyclic omitted for space
+pred COM { SC_per_Location and Causality }
+
+// Equivalence Checks
+check gam_com { GAM => COM } for 7
+check com_gam { rfe + co + fr + ppo in mo => COM => GAM } for 7
+  \end{lstlisting}
+  \caption{Comparing GAM and COM in Alloy}
+  \label{fig:alloy}
+\end{figure}
